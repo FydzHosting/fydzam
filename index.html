@@ -105,6 +105,22 @@
         .page-view.active {
             display: flex;
         }
+
+        /* Custom AM Swift notification modal */
+        .notice-backdrop { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:22px; background:rgba(10,12,18,.62); backdrop-filter:blur(7px); opacity:0; visibility:hidden; transition:.22s ease; }
+        .notice-backdrop.show { opacity:1; visibility:visible; }
+        .notice-card { width:min(100%,390px); background:#fff; border:3.5px solid #000; border-radius:22px; box-shadow:7px 7px 0 #000; padding:24px; transform:translateY(14px) scale(.97); transition:.22s ease; }
+        .notice-backdrop.show .notice-card { transform:translateY(0) scale(1); }
+        .notice-icon { width:58px; height:58px; display:grid; place-items:center; border:3px solid #000; border-radius:18px; box-shadow:3px 3px 0 #000; font-size:25px; margin:0 auto 15px; }
+        .notice-icon.success { background:#86efac; } .notice-icon.error { background:#fca5a5; }
+        .notice-action { width:100%; border:3px solid #000; border-radius:13px; box-shadow:3px 3px 0 #000; padding:11px 16px; font-weight:900; background:#FFD166; margin-top:18px; }
+        .field-wrap { position:relative; }
+        .field-wrap .neo-input { padding-right:48px; }
+        .field-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); width:30px; height:30px; display:none; align-items:center; justify-content:center; border:2px solid #000; border-radius:9px; background:#fca5a5; box-shadow:2px 2px 0 #000; font-size:12px; }
+        .field-clear.visible { display:flex; }
+        .paste-btn { display:inline-flex; align-items:center; gap:7px; border:2.5px solid #000; border-radius:10px; padding:7px 11px; background:#e5e7eb; box-shadow:2.5px 2.5px 0 #000; font-size:11px; font-weight:900; }
+        .paste-btn:active,.field-clear:active,.notice-action:active { transform:translate(1px,1px); box-shadow:1px 1px 0 #000; }
+
     </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between text-black antialiased pb-12">
@@ -220,7 +236,10 @@
                         <span class="text-[10px] bg-gray-100 text-gray-800 font-extrabold px-2 py-0.5 border border-black rounded-md">Langkah 1</span>
                     </div>
                     
-                    <input type="email" id="userEmail" placeholder="contoh: emailanda@gmail.com" class="w-full p-3.5 neo-input bg-gray-50 font-bold text-sm">
+                    <div class="field-wrap">
+                        <input type="email" id="userEmail" placeholder="contoh: emailanda@gmail.com" class="w-full p-3.5 neo-input bg-gray-50 font-bold text-sm" autocomplete="email">
+                        <button type="button" id="clearEmail" class="field-clear" aria-label="Hapus email" onclick="clearField('userEmail')"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
                     
                     <button id="btnSend" onclick="handleSendApi()" class="w-full py-4 neo-btn-orange text-base tracking-wide flex items-center justify-center gap-2 uppercase cursor-pointer">
                         Kirim Tautan Verifikasi <i class="fa-solid fa-arrow-down"></i>
@@ -238,7 +257,13 @@
                         <span class="text-[10px] bg-gray-100 text-gray-800 font-extrabold px-2 py-0.5 border border-black rounded-md">Langkah 2</span>
                     </div>
                     
-                    <input type="url" id="verifLink" placeholder="Tempel tautan dari email di sini..." class="w-full p-3.5 neo-input bg-gray-50 font-bold text-sm">
+                    <div class="field-wrap">
+                        <input type="url" id="verifLink" placeholder="Tempel tautan dari email di sini..." class="w-full p-3.5 neo-input bg-gray-50 font-bold text-sm" inputmode="url">
+                        <button type="button" id="clearLink" class="field-clear" aria-label="Hapus tautan" onclick="clearField('verifLink')"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="button" class="paste-btn" onclick="pasteVerificationLink()"><i class="fa-solid fa-paste"></i> PASTE TAUTAN</button>
+                    </div>
                     
                     <button id="btnVerif" onclick="handleVerifApi()" class="w-full py-3.5 neo-btn-yellow text-sm tracking-wide flex items-center justify-center gap-2 uppercase cursor-pointer">
                         <i class="fa-solid fa-circle-check"></i> Verifikasi Sekarang
@@ -294,13 +319,67 @@
 
     </div>
 
-    <!-- Toast Notification -->
-    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2"></div>
+    <!-- Custom notification popup (bukan alert bawaan browser) -->
+    <div id="noticePopup" class="notice-backdrop" role="dialog" aria-modal="true" aria-labelledby="noticeTitle" onclick="if(event.target===this) closeNotice()">
+        <div class="notice-card text-center">
+            <div id="noticeIcon" class="notice-icon success"><i class="fa-solid fa-check"></i></div>
+            <h3 id="noticeTitle" class="text-xl font-black uppercase">Berhasil!</h3>
+            <p id="noticeMessage" class="text-sm font-bold text-gray-600 mt-2 leading-relaxed">Proses selesai.</p>
+            <button type="button" class="notice-action" onclick="closeNotice()">MENGERTI <i class="fa-solid fa-arrow-right ml-1"></i></button>
+        </div>
+    </div>
 
     <!-- JavaScript & API Config -->
     <script>
-        const API_SEND_URL = "https://kyzorohan.web.id/api/am-send2?key=kyzo_623a7009088308f2&email="; 
-        const API_VERIF_URL = "https://kyzorohan.web.id/api/am-verif2?key=kyzo_623a7009088308f2&email=&link=";
+        // API AM Premium terbaru
+        // Catatan: API key di frontend dapat dilihat siapa pun melalui browser.
+        const API_BASE_URL = "https://api.kyzzz.xyz/api/premium";
+        const API_KEY = "kyzz0275156748600";
+
+        function buildApiUrl(endpoint, params = {}) {
+            const url = new URL(`${API_BASE_URL}/${endpoint}`);
+            url.searchParams.set('apikey', API_KEY);
+            Object.entries(params).forEach(([key, value]) => {
+                url.searchParams.set(key, value);
+            });
+            return url.toString();
+        }
+
+        async function readApiResponse(response) {
+            const raw = await response.text();
+            let data;
+            try { data = raw ? JSON.parse(raw) : {}; }
+            catch { data = { message: raw }; }
+            return { data, raw };
+        }
+
+        function apiMessage(data, fallback) {
+            if (typeof data === 'string') return data;
+            if (typeof data === 'boolean') return String(data);
+            return data?.message || data?.msg || data?.error || data?.status || data?.data || fallback;
+        }
+
+        // API ini dapat mengembalikan beberapa format: JSON boolean true,
+        // string "true", atau pesan teks seperti "Link verifikasi berhasil dikirim!".
+        function isApiSuccess(data, raw = '') {
+            if (data === true || data === 'true') return true;
+            if (data === false || data === 'false' || data == null) return false;
+
+            const values = [];
+            if (typeof data === 'string') values.push(data);
+            else if (typeof data === 'object') {
+                for (const key of ['success', 'status', 'message', 'msg', 'result', 'data']) {
+                    if (data[key] !== undefined && data[key] !== null) values.push(String(data[key]));
+                }
+                if (data.success === false || data.error) return false;
+            }
+            if (raw) values.push(raw);
+
+            const text = values.join(' ').trim().toLowerCase();
+            if (/^(true|1|ok|success)$/.test(text)) return true;
+            if (/\b(false|failed|failure|error|gagal|invalid|ditolak)\b/.test(text)) return false;
+            return /\b(berhasil|success|terkirim|dikirim|verified|terverifikasi|valid)\b/.test(text);
+        }
 
         function startAppWithIntro() {
             const overlay = document.getElementById('introOverlay');
@@ -365,15 +444,67 @@
             document.getElementById('logOutput').innerHTML = `<div class="text-gray-400">${new Date().toLocaleTimeString()} - [System] Log cleared.</div>`;
         }
 
+        let noticeTimer = null;
         function showToast(msg, isSuccess = true) {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `${isSuccess ? 'bg-emerald-400' : 'bg-red-400'} text-black font-extrabold px-4 py-3 neo-pill text-xs uppercase flex items-center gap-2 shadow-lg`;
-            toast.innerHTML = `<i class="fa-solid ${isSuccess ? 'fa-circle-check' : 'fa-triangle-exclamation'}"></i> <span>${msg}</span>`;
-            
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 4000);
+            const popup = document.getElementById('noticePopup');
+            const icon = document.getElementById('noticeIcon');
+            document.getElementById('noticeTitle').textContent = isSuccess ? 'Berhasil!' : 'Gagal!';
+            document.getElementById('noticeMessage').textContent = String(msg || (isSuccess ? 'Proses berhasil.' : 'Terjadi kesalahan.'));
+            icon.className = `notice-icon ${isSuccess ? 'success' : 'error'}`;
+            icon.innerHTML = `<i class="fa-solid ${isSuccess ? 'fa-check' : 'fa-xmark'}"></i>`;
+            popup.classList.add('show');
+            document.body.style.overflow = 'hidden';
+            clearTimeout(noticeTimer);
+            noticeTimer = setTimeout(closeNotice, 4800);
         }
+
+        function closeNotice() {
+            const popup = document.getElementById('noticePopup');
+            if (!popup) return;
+            popup.classList.remove('show');
+            document.body.style.overflow = '';
+            clearTimeout(noticeTimer);
+        }
+
+        function updateClearButtons() {
+            const email = document.getElementById('userEmail');
+            const link = document.getElementById('verifLink');
+            document.getElementById('clearEmail').classList.toggle('visible', email.value.length > 0);
+            document.getElementById('clearLink').classList.toggle('visible', link.value.length > 0);
+        }
+
+        function clearField(id) {
+            const field = document.getElementById(id);
+            field.value = '';
+            field.focus();
+            updateClearButtons();
+        }
+
+        async function pasteVerificationLink() {
+            const field = document.getElementById('verifLink');
+            try {
+                if (!navigator.clipboard || !navigator.clipboard.readText) {
+                    throw new Error('Clipboard tidak tersedia di browser ini. Tekan lama kolom lalu pilih Tempel.');
+                }
+                const clipboardText = (await navigator.clipboard.readText()).trim();
+                if (!clipboardText) {
+                    showToast('Clipboard kosong. Salin tautan verifikasi terlebih dahulu.', false);
+                    return;
+                }
+                field.value = clipboardText;
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+                field.focus();
+                showToast('Tautan berhasil ditempel ke kolom verifikasi.');
+            } catch (error) {
+                showToast(error.message || 'Tidak bisa membaca clipboard. Tekan lama kolom lalu pilih Tempel.', false);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('userEmail').addEventListener('input', updateClearButtons);
+            document.getElementById('verifLink').addEventListener('input', updateClearButtons);
+            updateClearButtons();
+        });
 
         async function handleSendApi() {
             const email = document.getElementById('userEmail').value.trim();
@@ -384,25 +515,35 @@
                 addLog('Kolom email kosong.', 'warn');
                 return;
             }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showToast('Format email tidak valid.', false);
+                addLog('Format email tidak valid.', 'warn');
+                return;
+            }
 
             btn.disabled = true;
             btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Memproses...`;
-            addLog(`Mengirim permintaan ke server untuk email: ${email}`);
+            addLog(`Mengirim permintaan verifikasi untuk: ${email}`);
 
             try {
-                const fullUrl = API_SEND_URL + encodeURIComponent(email);
-                const res = await fetch(fullUrl);
-                
-                if (res.ok) {
-                    addLog(`Respon server berhasil (HTTP ${res.status}). Tautan verifikasi terkirim.`, 'success');
-                    showToast('Tautan verifikasi berhasil dikirim.');
+                const response = await fetch(buildApiUrl('amprem', { email }), {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                const { data, raw } = await readApiResponse(response);
+                const message = apiMessage(data, response.ok ? 'Permintaan diproses oleh server.' : 'Permintaan ditolak server.');
+                const apiSaysSuccess = isApiSuccess(data, raw);
+
+                if (response.ok && apiSaysSuccess) {
+                    addLog(`Server menerima permintaan (HTTP ${response.status}): ${message}`, 'success');
+                    showToast('Permintaan pengiriman berhasil diproses.');
                 } else {
-                    addLog(`Server merespon dengan status ${res.status}.`, 'warn');
-                    showToast('Permintaan berhasil diproses.', true);
+                    addLog(`Pengiriman gagal (HTTP ${response.status}): ${message}`, 'error');
+                    showToast(message || 'Gagal mengirim tautan verifikasi.', false);
                 }
             } catch (err) {
-                addLog(`Proses pengiriman selesai.`, 'info');
-                showToast('Tautan verifikasi berhasil diproses.');
+                addLog(`Tidak dapat menghubungi API: ${err.message || 'Network/CORS error'}`, 'error');
+                showToast('Koneksi API gagal. Periksa jaringan atau CORS server.', false);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `Kirim Tautan Verifikasi <i class="fa-solid fa-arrow-down"></i>`;
@@ -414,45 +555,56 @@
             const link = document.getElementById('verifLink').value.trim();
             const btn = document.getElementById('btnVerif');
 
+            if (!email) {
+                showToast('Masukkan alamat email terlebih dahulu.', false);
+                addLog('Kolom email kosong.', 'warn');
+                return;
+            }
             if (!link) {
                 showToast('Masukkan tautan verifikasi.', false);
                 addLog('Kolom tautan verifikasi kosong.', 'warn');
                 return;
             }
+            try {
+                new URL(link);
+            } catch {
+                showToast('Format tautan verifikasi tidak valid.', false);
+                addLog('Format tautan verifikasi tidak valid.', 'warn');
+                return;
+            }
 
             btn.disabled = true;
             btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Memverifikasi...`;
-            addLog(`Mengeksekusi verifikasi akun...`);
+            addLog(`Mengirim proses verifikasi untuk email: ${email}`);
 
             try {
-                let fullUrl = API_VERIF_URL;
-                if (fullUrl.includes('email=&link=')) {
-                    fullUrl = fullUrl.replace('email=', 'email=' + encodeURIComponent(email))
-                                     .replace('link=', 'link=' + encodeURIComponent(link));
-                } else {
-                    fullUrl += `&email=${encodeURIComponent(email)}&link=${encodeURIComponent(link)}`;
-                }
+                const response = await fetch(buildApiUrl('amprem-verif', { email, link }), {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                const { data, raw } = await readApiResponse(response);
+                const message = apiMessage(data, response.ok ? 'Permintaan verifikasi diterima server.' : 'Verifikasi ditolak server.');
+                const apiSaysSuccess = isApiSuccess(data, raw);
 
-                const res = await fetch(fullUrl);
-                
-                if (res.ok) {
-                    addLog(`Verifikasi berhasil. Akun aktif.`, 'success');
-                    showToast('Akun berhasil diverifikasi.');
-                    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+                if (response.ok && apiSaysSuccess) {
+                    addLog(`Respons verifikasi diterima (HTTP ${response.status}): ${message}`, 'success');
+                    showToast('Permintaan verifikasi berhasil diproses.');
+                    if (typeof confetti === 'function') {
+                        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+                    }
                 } else {
-                    addLog(`Proses verifikasi selesai (HTTP ${res.status}).`, 'success');
-                    showToast('Verifikasi selesai diproses.', true);
-                    confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+                    addLog(`Verifikasi gagal (HTTP ${response.status}): ${message}`, 'error');
+                    showToast(message || 'Verifikasi gagal.', false);
                 }
             } catch (err) {
-                addLog(`Eksekusi verifikasi selesai.`, 'success');
-                showToast('Akun berhasil diverifikasi.');
-                confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+                addLog(`Tidak dapat menghubungi API: ${err.message || 'Network/CORS error'}`, 'error');
+                showToast('Koneksi API gagal. Periksa jaringan atau CORS server.', false);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Verifikasi Sekarang`;
             }
         }
+
     </script>
 </body>
 </html>
